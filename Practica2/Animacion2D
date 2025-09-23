@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<head>
+</head>
+<body>
+    <canvas id = "webglcanvas" style = "border: none" width = "500"
+     height = "500"></canvas>   
+     <script id="vs" type="vertex">
+        #version 300 es
+        uniform mat4 uMatrizProyeccion;
+        uniform mat4 uMatrizVista;
+        uniform mat4 uMatrizModelo;
+        layout(location = 0) in vec2 aVertices;
+        void main() {
+            gl_Position = uMatrizProyeccion * uMatrizVista * uMatrizModelo * vec4(aVertices, 0.0, 1.0);
+        }
+      </script>
+
+      <script id="fs" type="fragment">
+        #version 300 es
+        precision mediump float;
+        uniform vec4 uColor;
+        out vec4 color;
+        void main() {
+            color = uColor;
+        }
+      </script>
+    <script>
+
+        /* Convierte de grados a radianes */
+        function toRadians(grados) {
+          return grados * Math.PI / 180;
+        };
+
+        /* Matriz Identidad */
+        function identidad(r) {
+            r[0] = 1; r[4] = 0; r[ 8] = 0; r[12] = 0;
+            r[1] = 0; r[5] = 1; r[ 9] = 0; r[13] = 0;
+            r[2] = 0; r[6] = 0; r[10] = 1; r[14] = 0;
+            r[3] = 0; r[7] = 0; r[11] = 0; r[15] = 1;
+        }
+
+        /* Traslación - glTranslatef */
+        function traslacion(matriz, tx, ty, tz) {
+          let r = new Array(16);
+          r[0] = 1; r[4] = 0; r[ 8] = 0; r[12] = tx;
+          r[1] = 0; r[5] = 1; r[ 9] = 0; r[13] = ty;
+          r[2] = 0; r[6] = 0; r[10] = 1; r[14] = tz;
+          r[3] = 0; r[7] = 0; r[11] = 0; r[15] =  1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Escalación - glScalef */
+        function escalacion(matriz, sx, sy, sz) { 
+          let r = new Array(16);
+          r[0] = sx; r[4] =  0; r[ 8] =  0; r[12] =  0;
+          r[1] =  0; r[5] = sy; r[ 9] =  0; r[13] =  0;
+          r[2] =  0; r[6] =  0; r[10] = sz; r[14] =  0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] =  1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Rotación sobre X - glRotatef */
+        function rotacionX(matriz, theta){
+          let r = new Array(16);
+          let c = Math.cos(toRadians(theta));
+          let s = Math.sin(toRadians(theta));
+          r[0] =  1; r[4] =  0; r[ 8] =  0; r[12] = 0;
+          r[1] =  0; r[5] =  c; r[ 9] = -s; r[13] = 0;
+          r[2] =  0; r[6] =  s; r[10] =  c; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r); 
+        }
+
+        /* Rotación sobre Y - glRotatef */
+        function rotacionY(matriz, theta){
+          let r = new Array(16);
+          let c = Math.cos(toRadians(theta));
+          let s = Math.sin(toRadians(theta));
+          r[0] =  c; r[4] =  0; r[ 8] =  s; r[12] = 0;
+          r[1] =  0; r[5] =  1; r[ 9] =  0; r[13] = 0;
+          r[2] = -s; r[6] =  0; r[10] =  c; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r);
+        }
+	
+        /* Rotación sobre Z - glRotatef */
+        function rotacionZ(matriz, theta){
+          let r = new Array(16);
+          let c = Math.cos(toRadians(theta));
+          let s = Math.sin(toRadians(theta));
+          r[0] =  c; r[4] = -s; r[ 8] =  0; r[12] = 0;
+          r[1] =  s; r[5] =  c; r[ 9] =  0; r[13] = 0;
+          r[2] =  0; r[6] =  0; r[10] =  1; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Proyección Paralela - glOrtho */
+        function ortho(r, izq, der, abj, arr, cerca, lejos) {
+            r[0] = 2/(der - izq); r[4] =             0; r[ 8] =                  0; r[12] =         -(der + izq)/(der - izq);
+            r[1] =             0; r[5] = 2/(arr - abj); r[ 9] =                  0; r[13] =         -(arr + abj)/(arr - abj);
+            r[2] =             0; r[6] =             0; r[10] = -2/(lejos - cerca); r[14] = -(lejos + cerca)/(lejos - cerca);
+            r[3] =             0; r[7] =             0; r[11] =                  0; r[15] =                                1;
+        }
+
+        /* Multiplicación de matrices de 4 x 4 */
+        function multiplica(c, a, b) {
+          let r = new Array(16);
+          let i, j, k;
+          for (i = 0; i < 4; i++){
+            for (j = 0; j < 4; j++){
+              let s = 0;
+              for (k = 0; k < 4; k++)
+                s = s + a[i + k * 4] * b[k + j * 4];
+              r[i + j * 4] = s;
+            }
+          }
+          for (i = 0; i < 16; i++)
+            c[i] = r[i];
+        }
+
+        let uColor;
+        let uMatrizProyeccion;
+        let uMatrizVista;
+        let uMatrizModelo;
+
+        let MatrizProyeccion = new Array(16);
+        let MatrizVista = new Array(16);
+        let MatrizModelo = new Array(16);
+        let canvas, gl;
+        let tx = 0;       
+        let destinoX = tx;   
+        let dx = 0.2; //velocidad de movimiento
+
+        let lasers = []; 
+        let velocidadLaser = 2;
+
+        let lasers2 = []; 
+        let velocidadLaser2 = 1;
+
+        let dyNaveS = 0;        //desplazamiento actual en Y
+        let direccionNaveS = 1; //1 = sube, -1 = baja
+        let velocidadNaveS = 0.1; //velocidad de movimiento
+        let limiteNaveS = 5;    //cuánto se mueve desde la posición original
+
+        let colisiones = 0;       //cuántas veces fue alcanzada
+        let escalaNave = 1;       //escala actual de la nave
+        let naveVisible = true;   //si se dibuja o no
+        let respawnTimeout = null;
+
+        const naveS_base = {
+            x: -4,   //esquina inferior izquierda
+            y: 38,   //posición base Y inferior
+            ancho: 8,
+            alto: 10
+        };
+
+        function puntoEstaDentroDelRectangulo(x, y, x1, y1, ancho, alto) {
+            let x2 = x1 + ancho;
+            let y2 = y1 + alto;
+            return (x1 <= x && x <= x2 && y1 <= y && y <= y2);
+        }
+
+        function manejarColision() {
+            colisiones++;
+            if (colisiones < 4) {
+                escalaNave *= 0.9; 
+            } else {
+                naveVisible = false; // desaparece
+                escalaNave = 1;      
+                colisiones = 0;      
+
+                respawnTimeout = setTimeout(() => {
+                    naveVisible = true;
+                }, 2000);
+            }
+        }
+
+
+        function dispararLaser() {
+            lasers.push({ x: tx, y: -30 }); 
+        }
+
+        function dispararLaser2() {
+            let offsetsX = [0, 0, 0, 0]; 
+            for (let i = 0; i < offsetsX.length; i++) {
+                lasers2.push({ x: tx + offsetsX[i], y: -30 }); 
+            }
+        }
+
+        function mouseDown(e){
+            var posx = e.x;
+            var posy = e.y;
+
+            posx = posx - canvas.offsetLeft;
+            posy = posy - canvas.offsetTop;
+
+            var x = (posx * 100)/500 - 50;
+            var y = (100 - (posy * 100)/500) - 50;
+
+            console.log('Click en x = ', x, ' y = ', y);
+
+            destinoX = x; 
+        }
+
+        function dibuja(){ 
+            gl.clearColor(0/255, 25/255, 51/255, 1);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            //ESTRELLAS
+            let estrellasPos = [
+                {x: -18, y: -18},
+                {x: -1,  y:  2},
+                {x: -45, y: 45},
+                {x: -36, y: 36},
+                {x: -22, y: -26},
+                {x: -43, y: -23},
+                {x: 40, y: -21},
+                {x: 20, y: -13},
+                {x: 11, y: -15},
+                {x: 21, y: -22},
+                {x: -40, y: -19},
+                {x: -47, y: -11},
+                {x: -28, y: -2},
+                {x: 28, y: 0},
+                {x: 14, y: 4},
+                {x: -40, y: 8},
+                {x: 40, y: 8},
+                {x: -45, y: 16},
+                {x: 46, y: -10},
+                {x: 43, y: 20},
+                {x: -7, y: 20},
+                {x: 20, y: 18},
+                {x: -22, y: 18},
+                {x: -16, y: 43},
+                {x: 10, y: 30},
+                {x: 30, y: 38},
+                {x: 46, y: 46},
+                {x: 25, y: -1},
+                {x: -17, y: 30},
+                {x: -27, y: 0},
+                {x: -19, y: 2},
+                {x: -5, y: 44},
+                {x: -32, y: 12}, 
+                {x: 8, y: -34}, 
+                {x: 47, y: 25}, 
+                {x: -15, y: 40},
+                {x: 0, y: -45}, 
+                {x: 23, y: 11}, 
+                {x: -5, y: 5}, 
+                {x: 37, y: -8},
+                {x: -42, y: 30}, 
+                {x: 12, y: 28}, 
+                {x: -10, y: -12}, 
+                {x: 29, y: 37},
+                {x: 44, y: -20}, 
+                {x: -38, y: -33}, 
+                {x: 19, y: -25}, 
+                {x: -6, y: 17},
+                {x: 35, y: 43}, 
+                {x: -28, y: 7}, 
+                {x: 41, y: -37}, 
+                {x: -50, y: -5},
+                {x: 16, y: 22}, 
+                {x: -20, y: -42}, 
+                {x: 5, y: 35}, 
+                {x: -12, y: -7},
+                {x: 24, y: 0}, 
+                {x: -31, y: 16}, 
+                {x: 30, y: -14}, 
+                {x: -7, y: -28},
+                {x: 48, y: 9}, 
+                {x: -45, y: -20}, 
+                {x: 14, y: -35}, 
+                {x: -3, y: 41},
+                {x: 39, y: -6}, 
+                {x: -27, y: 34}, 
+                {x: 2, y: 12}, 
+                {x: -36, y: -12},
+                {x: 22, y: 45}, 
+                {x: -9, y: -38}, 
+                {x: 46, y: 14}, 
+                {x: -18, y: 29},
+                {x: -48, y: 22}, 
+                {x: 33, y: -18}, 
+                {x: 7, y: 44}, 
+                {x: -26, y: -9},
+                {x: 15, y: -40}, 
+                {x: -4, y: 19}, 
+                {x: 39, y: 5}, 
+                {x: -21, y: 37},
+                {x: 12, y: -22}, 
+                {x: -35, y: 3}, 
+                {x: 27, y: 28}, 
+                {x: -12, y: -35},
+                {x: 44, y: 17}, 
+                {x: -9, y: 45}, 
+                {x: 18, y: -7}, 
+                {x: -47, y: -30},
+                {x: 5, y: 25}, 
+                {x: -31, y: 11}, 
+                {x: 41, y: -14}, 
+                {x: -14, y: -5},
+                {x: 36, y: 40}, 
+                {x: -23, y: 20}, 
+                {x: 10, y: -33}, 
+                {x: -38, y: 8},
+                {x: 21, y: 15}, 
+                {x: -7, y: -45}, 
+                {x: 46, y: -2}, 
+                {x: -32, y: 36},
+                {x: 0, y: 12}, 
+                {x: -19, y: -27}, 
+                {x: 28, y: 6}, 
+                {x: -45, y: 41},
+                {x: 16, y: -12}, 
+                {x: -6, y: 33}, 
+                {x: 43, y: -22}, 
+                {x: -25, y: 0},
+                {x: 8, y: 38}, 
+                {x: -41, y: -16}, 
+                {x: 31, y: 20}, 
+                {x: -11, y: 7},
+                {x: -49, y: 35}, 
+                {x: 32, y: -7}, 
+                {x: 6, y: 19}, 
+                {x: -29, y: 44},
+                {x: 17, y: -30}, 
+                {x: -2, y: 5}, 
+                {x: 38, y: 23}, 
+                {x: -24, y: -16},
+                {x: 11, y: 41}, 
+                {x: -37, y: -5}, 
+                {x: 26, y: 9}, 
+                {x: -13, y: -41},
+                {x: 45, y: 12}, 
+                {x: -8, y: 36}, 
+                {x: 19, y: -18}, 
+                {x: -46, y: 7},
+                {x: 3, y: 27}, 
+                {x: -33, y: 14}, 
+                {x: 42, y: -3}, 
+                {x: -15, y: 31},
+                {x: 34, y: 0}, 
+                {x: -20, y: -11}, 
+                {x: 9, y: 21}, 
+                {x: -39, y: 2},
+                {x: 23, y: -36}, 
+                {x: -5, y: 43}, 
+                {x: 47, y: -8}, 
+                {x: -30, y: 29},
+                {x: 1, y: -19}, 
+                {x: -44, y: 4}, 
+                {x: 14, y: 39}, 
+                {x: -10, y: -28},
+                {x: 37, y: 16}, 
+                {x: -22, y: 6}, 
+                {x: 8, y: -44}, 
+                {x: -42, y: -1},
+                {x: 29, y: 33}, 
+                {x: -16, y: -6}, 
+                {x: 4, y: 11}, 
+                {x: -34, y: 40},
+                {x: -48, y: -7}, 
+                {x: 39, y: 31}, 
+                {x: -21, y: 11}, 
+                {x: 7, y: -41}, 
+                {x: -12, y: 28},
+                {x: 25, y: 3}, 
+                {x: -35, y: 18}, 
+                {x: 42, y: -12}, 
+                {x: -6, y: 45}, 
+                {x: 19, y: -5},
+                {x: -29, y: 6}, 
+                {x: 33, y: -22}, 
+                {x: -44, y: 17}, 
+                {x: 5, y: 38}, 
+                {x: -16, y: -33},
+                {x: 27, y: 12}, 
+                {x: -41, y: 0}, 
+                {x: 13, y: -27}, 
+                {x: -9, y: 36}, 
+                {x: 36, y: -8},
+                {x: -32, y: 24}, 
+                {x: 20, y: -39}, 
+                {x: -14, y: 8}, 
+                {x: 43, y: 5}, 
+                {x: -18, y: -21},
+                {x: 31, y: 14}, 
+                {x: -46, y: -3}, 
+                {x: 11, y: 29}, 
+                {x: -25, y: 40}, 
+                {x: 6, y: -17},
+                {x: -38, y: -14}, 
+                {x: 22, y: 44}, 
+                {x: -3, y: -40}, 
+                {x: 34, y: 1},
+                 {x: -20, y: 19},
+                {x: 9, y: 33}, 
+                {x: -43, y: -9}, 
+                {x: 30, y: -2}, 
+                {x: -7, y: 26}, 
+                {x: 15, y: -45},
+                {x: -31, y: 37}, 
+                {x: 24, y: 7}, 
+                {x: -10, y: -31}, 
+                {x: 38, y: 16}, 
+                {x: -5, y: -12},
+                {x: 41, y: -25}, 
+                {x: -26, y: 15}, 
+                {x: 18, y: 40}, 
+                {x: -13, y: -37}, 
+                {x: 32, y: 10},
+                {x: -40, y: 20}, 
+                {x: 14, y: -2}, 
+                {x: -17, y: 27}, 
+                {x: 37, y: -19}, 
+                {x: -4, y: 9},
+                {x: 28, y: 22}, 
+                {x: -33, y: -6}, 
+                {x: 12, y: 44}, 
+                {x: -8, y: -20}, 
+                {x: 35, y: 4},
+                {x: -36, y: 11}, 
+                {x: 21, y: -30}, 
+                {x: -1, y: 18}, 
+                {x: 29, y: -10}, 
+                {x: -23, y: 2},
+                {x: 16, y: 39}, 
+                {x: -37, y: -1}, 
+                {x: 26, y: -36}, 
+                {x: -11, y: 32}, 
+                {x: 40, y: -15},
+                {x: -28, y: 23}, 
+                {x: 10, y: -7}, 
+                {x: -2, y: 5}, 
+                {x: 44, y: 8}, 
+                {x: -19, y: -29},
+                {x: 23, y: 13}, 
+                {x: -45, y: 30}, 
+                {x: 17, y: -11}, 
+                {x: -6, y: 42}, 
+                {x: 33, y: -4},
+                {x: -34, y: 35}, 
+                {x: 8, y: 25}, 
+                {x: -15, y: -18}, 
+                {x: 36, y: 2}, 
+                {x: -27, y: 16},
+                {x: 5, y: -39}, 
+                {x: -42, y: -8}, 
+                {x: 31, y: 21}, 
+                {x: -24, y: -13}, 
+                {x: 19, y: 37},
+                {x: -30, y: 1}, 
+                {x: 12, y: -23}, 
+                {x: -39, y: 14}, 
+                {x: 34, y: -5}, 
+                {x: -22, y: 41},
+                {x: 7, y: -16}, 
+                {x: -47, y: 6}, 
+                {x: 20, y: -35}, 
+                {x: -9, y: 24}, 
+                {x: 43, y: -9},
+                {x: -12, y: 38}, 
+                {x: 25, y: -1}, 
+                {x: -35, y: 33}, 
+                {x: 14, y: -27}, 
+                {x: -16, y: 3},
+                {x: 37, y: 7}, 
+                {x: -5, y: -34}, 
+                {x: 28, y: 19}, 
+                {x: -41, y: -2}, 
+                {x: 11, y: 42},
+                {x: -31, y: -10}, 
+                {x: 22, y: -28}, 
+                {x: -8, y: 15}, 
+                {x: 38, y: -1}, 
+                {x: -18, y: 36}
+
+            ];
+            gl.uniform4f(uColor, 1, 1, 1, 1); 
+
+            for (let estrella of estrellasPos) {
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo, estrella.x, estrella.y, 0);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+
+                gl.bindVertexArray(estrellasVao);
+                gl.drawArrays(gl.TRIANGLE_FAN, 0, 360);
+            }
+
+            let naveS_rect = {
+                x: naveS_base.x * escalaNave,
+                y: naveS_base.y * escalaNave + dyNaveS,
+                ancho: naveS_base.ancho * escalaNave,
+                alto: naveS_base.alto * escalaNave
+            };
+
+            //laser verde
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                let l = lasers[i];
+                l.y += velocidadLaser;
+
+                if (puntoEstaDentroDelRectangulo(l.x, l.y,
+                    naveS_rect.x, naveS_rect.y,
+                    naveS_rect.ancho, naveS_rect.alto)) {
+                    manejarColision();
+                    lasers.splice(i, 1);
+                }
+                if (l.y > 50) {
+                    lasers.splice(i, 1);
+                    continue;
+                }
+
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo, l.x, l.y, 0);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+
+                gl.uniform4f(uColor, 0, 1, 0, 1);
+                gl.bindVertexArray(laserVao);
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+            }
+
+            for (let i = lasers2.length - 1; i >= 0; i--) {
+                let l2 = lasers2[i];
+                l2.y += velocidadLaser2;
+
+                if (l2.y > 50) { 
+                    lasers2.splice(i, 1);
+                    continue;
+                }
+
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo, l2.x, l2.y, 0);
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+
+                gl.uniform4f(uColor, 0, 0, 1, 1);
+                gl.bindVertexArray(laser2Vao);
+                gl.drawArrays(gl.TRIANGLES, 0, 24);
+            }
+
+            identidad(MatrizModelo);
+            traslacion(MatrizModelo, tx, -30, 0);
+            gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+
+            /*pieza 1*/
+            gl.uniform4f(uColor,148/255, 164/255, 179/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            /*pieza 2*/
+            gl.uniform4f(uColor,55/255, 74/255, 91/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 6, 6);
+
+            /*pieza 2.1*/
+            gl.uniform4f(uColor,103/255, 119/255, 141/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 12, 6);
+
+            /*pieza 3*/
+            gl.uniform4f(uColor,142/255, 50/255, 59/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 18, 6);
+
+            /*pieza 4*/
+            gl.uniform4f(uColor,124/255, 142/255, 162/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 24, 6);
+
+            /*pieza 5*/
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 30, 6);
+
+            /*pieza 6*/
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 36, 6);
+
+            /*pieza 6.1*/
+            gl.uniform4f(uColor,55/255, 76/255, 93/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 42, 6);
+
+            /*pieza 7*/
+            gl.uniform4f(uColor,142/255, 50/255, 59/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 48, 6);
+
+            /*pieza 7.1*/
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 54, 6);
+
+            /*pieza 8*/
+            gl.uniform4f(uColor,55/255, 74/255, 91/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 60, 6);
+
+            /*pieza 8.1*/
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 66, 6);
+
+            /*pieza 9*/
+            gl.uniform4f(uColor,1, 1, 1, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 72, 6);
+
+            /*pieza 9.1*/
+            gl.uniform4f(uColor,1, 1, 1, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 78, 6);
+
+            /*pieza 10*/
+            gl.uniform4f(uColor,148/255, 164/255, 179/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 84, 6);
+
+            /*pieza 11*/
+            gl.uniform4f(uColor,142/255, 50/255, 59/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 90, 6);
+
+            /*pieza 12*/
+            gl.uniform4f(uColor,55/255, 74/255, 91/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 96, 6);
+
+            /*pieza 13*/
+            gl.uniform4f(uColor,51/255, 71/255, 83/255, 1);
+            gl.bindVertexArray(naveVao);
+            gl.drawArrays(gl.TRIANGLES, 102, 12);
+
+            if (naveVisible) {
+                identidad(MatrizModelo);
+                traslacion(MatrizModelo, 0, dyNaveS, 0);        
+                escalacion(MatrizModelo, escalaNave, escalaNave, 1); 
+                gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+
+                gl.uniform4f(uColor, 0, 1, 1, 1); 
+                gl.bindVertexArray(naveSVao);
+                gl.drawArrays(gl.TRIANGLES, 0, 6); // cuerpo
+
+                gl.uniform4f(uColor, 1, 1, 0, 1);
+                gl.bindVertexArray(naveSVao);
+                gl.drawArrays(gl.TRIANGLES, 6, 9); // alas
+
+                gl.uniform4f(uColor,0/255, 25/255, 51/255, 1);
+                gl.bindVertexArray(naveSVao);
+                gl.drawArrays(gl.TRIANGLES, 15, 18); // relleno
+            }
+
+            gl.bindVertexArray(null);
+ 
+            if (Math.abs(destinoX - tx) > dx) {
+                if (tx < destinoX) {
+                    tx += dx;  // mover a la derecha
+                } else if (tx > destinoX) {
+                    tx -= dx;  // mover a la izquierda
+                }
+            } else {
+                tx = destinoX; 
+            }
+            //actualiza desplazamiento de la naveS
+            dyNaveS += direccionNaveS * velocidadNaveS;
+            if (Math.abs(dyNaveS) > limiteNaveS) {
+                direccionNaveS *= -1; 
+            }
+
+            requestAnimationFrame(dibuja);
+        }
+
+        function main(){
+            canvas = document.getElementById("webglcanvas");
+            gl = canvas.getContext("webgl2");
+
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+            canvas.addEventListener("mousedown", mouseDown, false);
+
+            // compila shader de vertice
+            let shaderDeVertice = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(shaderDeVertice, 
+                document.getElementById("vs").text.trim());
+            gl.compileShader(shaderDeVertice); 
+
+            // compila shader de fragmento
+            let shaderDeFragmento = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(shaderDeFragmento, 
+                document.getElementById("fs").text.trim());
+            gl.compileShader(shaderDeFragmento); 
+
+            // enlazar ambos
+            let programaID = gl.createProgram();
+            gl.attachShader(programaID, shaderDeVertice); 
+            gl.attachShader(programaID, shaderDeFragmento);
+            gl.linkProgram(programaID);
+
+            gl.useProgram(programaID);
+
+            // nave
+            let nave = [
+              /*pieza 1*/
+              -2,-17, //A
+              2,-17, //B
+              2,-10, //C
+
+              -2,-17, //A
+              2,-10, //C
+              -2,-10, //D
+
+              /*pieza 2*/
+              //izquierda
+              -2,-17, //A
+              -2,-10, //D
+              -3,-16, //E
+              //derecha
+              2,-17, //B
+              2,-10, //C
+              3,-16, //F
+
+              /*pieza 2.1*/
+              //izquierda
+              -2,-10, //D
+              -3,-16, //E
+              -3,-10, //G
+              //derecha
+              2,-10, //C
+              3,-16, //F
+              3,-10, //H
+
+
+              /*pieza 3*/
+              //izquierda
+              -3,-16, //E
+              -3,-10, //G
+              -4,-16, //I
+              //derecha
+              3,-16, //F
+              3,-10, //H
+              4,-16, //J
+
+              /*pieza 4*/
+              //izquierda
+              -3,-10, //G
+              -4,-16, //I
+              -5,-16, //L
+              //derecha
+              3,-10, //H
+              4,-16, //J
+              5,-16, //K
+
+              /*pieza 5*/
+              //izquierda
+              -3,-10, //G
+              -5,-16, //L
+              -6,-10, //M
+              //derecha
+              3,-10, //H
+              5,-16, //K
+              6,-10, //N
+
+              /*pieza 6*/
+              //izquierda
+              -5,-16, //L
+              -6,-10, //M
+              -7,-15, //O
+              //derecha
+              5,-16, //K
+              6,-10, //N
+              7,-15, //P
+
+              /*pieza 6.1*/
+              //izquierda
+              -6,-10, //M
+              -7,-15, //O
+              -7,-11, //Q
+              //derecha
+              6,-10, //N
+              7,-15, //P
+              7,-11, //R
+
+              /*pieza 7*/
+              //izquierda
+              -7,-11, //Q
+              -7,-13, //S
+              -11,-13, //T
+              //derecha
+              7,-11, //R
+              7,-13, //U
+              11,-13, //V
+
+              /*pieza 7.1*/
+              //izquierda
+              -7,-11, //Q
+              -11,-13, //T
+              -11,-11, //W
+              //derecha
+              7,-11, //R
+              11,-13, //V
+              11,-11, //Z
+
+              /*pieza 8*/
+              //izquierda
+              -7,-15, //O
+              -7,-13, //S
+              -14,-15, //A1
+              //derecha
+              7,-13, //U
+              7,-15, //P
+              13,-15, //C1
+
+              /*pieza 8.1*/
+              //izquierda
+              -7,-13, //S
+              -14,-15, //A1
+              -14,-13, //B1
+              //derecha
+              7,-13, //U
+              13,-15, //C1
+              13,-13, //D1
+
+              /*pieza 9*/
+              //izquierda
+              -11,-11, //W
+              -10,-11, //E1
+              -11,-5, //F1              
+              //derecha
+              11,-11, //Z
+              10,-11, //I1
+              11,-5, //J1
+
+              /*pieza 9.1*/
+              //izquierda
+              -13,-13, //G1
+              -14,-13, //B1
+              -14,-7,
+              //derecha
+              13,-13, //D1 
+              12,-13, //K1
+              13,-7, //L1
+              
+              /*pieza 10*/
+              -1,2, //M1
+              -1,-10, //N1
+              1,-10, //O1
+              -1,2, //M1
+              1,-10, //O1
+              1,2, //P1
+
+              /*pieza 11*/
+              //izquierda
+              -1,2, //M1              
+              -1,-10, //N1
+              -2,-10, //D
+              //derecha
+              1,-10, //O1
+              1,2, //P1
+              2,-10, //C
+
+              /*pieza 12*/
+              //izquierda
+              -1,2, //M1              
+              -2,-10, //D
+              -3,-10, //G
+              //derecha
+              1,2, //P1
+              2,-10, //C
+              3,-10, //H
+
+              /*pieza 13*/
+              //izquierda
+              -4,-16, //I
+              -5,-16, //L
+              -5,-19, //Q1
+              
+              -4,-16, //I
+              -5,-19, //Q1
+              -4,-19, //R1
+              //derecha
+              4,-16, //J
+              5,-16, //K
+              4,-19, //S1
+
+              5,-16, //K
+              4,-19, //S1
+              5,-19 //T1
+            ];
+
+            let laser = [
+
+              -0.5,4.5, //W1
+              -0.5,2.5, //V1
+              0.5,2.5, //U1
+              -0.5,4.5, //W1
+              0.5,2.5, //U1
+              0.5,4.5 //Z1
+
+            ];
+
+            let laser2=[
+              -14.5, -4, //C2
+              -14.5,-6, //B2
+              -13.5,-6, //A2
+              -14.5, -4, //C2
+              -13.5,-4, //D2
+              -13.5,-6, //A2
+
+              -11.5,-2, //G2
+              -11.5,-4, //E2
+              -10.5,-4, //F2
+              -11.5,-2, //G2
+              -10.5,-4, //F2
+              -10.5,-2, //H2
+
+              10.5,-2, //J2
+              10.5,-4, //I2
+              11.5,-4, //K2
+              10.5,-2, //J2
+              11.5,-2, //L2
+              11.5,-4, //K2
+
+              12.5,-6, //M2
+              12.5,-4, //N2
+              13.5,-6, //O2
+              12.5,-4, //N2
+              13.5,-6, //O2
+              13.5,-4 //P2
+
+
+            ];
+
+            let estrellas = [0, 0]; 
+            var radio = 0.3;
+            for (var i = 0; i <= 360; i++) {  
+                estrellas.push(radio * Math.cos(i * Math.PI / 180));
+                estrellas.push(radio * Math.sin(i * Math.PI / 180));
+            }
+
+            let naveS = [
+              //NaveS1
+              -2,42, //Q2
+              2,42, //R2
+              -2,46, //S2
+      
+              2,42, //R2
+              -2,46, //S2
+              2,46, //T2
+
+              //ALAS
+              //NaveS1
+              -2,42, //Q2
+              -2,46, //S2
+              -4,48, //V2
+
+              2,42, //R2
+              2,46, //T2
+              4,48, //U2
+
+              -2,42, //Q2
+              2,42, //R2
+              0,38, //W2
+
+              //RELLENO
+              -4,48, //V2
+              -2,42, //Q2
+              -4,38, //Z2
+
+              -2,42, //Q2
+              -4,38, //Z2
+              0,38, //W2
+
+              2,42, //R2
+              0,38, //W2
+              4,38, //A3
+
+              2,42, //R2
+              4,48, //U2
+              4,38, //A3
+
+              4,48, //U2
+              2,46, //T2
+              -2,46, //S2
+
+              4,48, //U2
+              -4,48, //V2
+              -2,46 //S2
+
+            ];
+
+            /*Nave*/
+            naveVao= gl.createVertexArray();
+            gl.bindVertexArray(naveVao);
+
+            let codigoNave = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoNave);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nave), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+            /*Laser*/
+            laserVao= gl.createVertexArray();
+            gl.bindVertexArray(laserVao);
+
+            let codigoLaser = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoLaser);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(laser), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+            /*Laser2*/
+            laser2Vao= gl.createVertexArray();
+            gl.bindVertexArray(laser2Vao);
+
+            let codigoLaser2 = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoLaser2);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(laser2), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+            /*estrellas*/
+            estrellasVao = gl.createVertexArray();
+            gl.bindVertexArray(estrellasVao);
+            let codigoEstrellas = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoEstrellas);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(estrellas), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+            /*NaveSith*/
+            naveSVao= gl.createVertexArray();
+            gl.bindVertexArray(naveSVao);
+
+            let codigoNaveS = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoNaveS);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(naveS), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+
+            uColor = gl.getUniformLocation(programaID, "uColor");
+            uMatrizProyeccion = gl.getUniformLocation(programaID, "uMatrizProyeccion");
+            uMatrizVista = gl.getUniformLocation(programaID, "uMatrizVista");
+            uMatrizModelo = gl.getUniformLocation(programaID, "uMatrizModelo");
+
+            ortho(MatrizProyeccion, -50, 50, -50, 50, -1, 1);
+            gl.uniformMatrix4fv(uMatrizProyeccion, false, MatrizProyeccion);
+
+            identidad(MatrizVista);
+            gl.uniformMatrix4fv(uMatrizVista, false, MatrizVista);
+
+            setInterval(dispararLaser, 300); 
+            setInterval(dispararLaser2, 2000);  
+
+            dibuja();
+         
+        }
+        window.onload = main;
+    </script>
+</body>
+</html>
