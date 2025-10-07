@@ -1,0 +1,934 @@
+<!doctype html>
+<html lang="es">
+<head>
+      <title>Juego animacion en WebGL 2.0</title>
+      <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+</head>
+<body>
+      <h2>Juego animacion en WebGL 2.0</h2>
+      <canvas id="webglcanvas" style="border: none;" width="500" height="500"></canvas>
+      <div>
+        <button id="arriba">Arriba</button>
+        <button id="abajo">Abajo</button>
+        <button id="disparar">Disparar</button>
+      </div>
+      <div>
+        <p>Naves destruidas: <span id="contadorEnemigos">0</span></p>
+        <p>Impactos: <span id="contadorImpactos">0</span></p>
+      </div>
+      <noscript><p><b>Lo siento, pero ésta página requiere JavaScript.</b></p></noscript>
+
+      <script id="vs" type="vertex">
+        #version 300 es
+        uniform vec2 uDesplaza;
+        uniform vec2 uEscala;
+        uniform mat4 uMatrizProyeccion;
+        layout(location = 0) in vec2 aVertices;
+        void main() {
+          vec2 vertices = aVertices * uEscala + uDesplaza; //representa traslacion (matriz de traslacion)
+          gl_Position = uMatrizProyeccion * vec4(vertices, 0.0, 1.0);
+        }
+      </script>
+
+      <script id="fs" type="fragment">
+        #version 300 es
+        precision mediump float;
+        uniform vec4 uColor;
+        out vec4 color;
+        void main() {
+            color = uColor;
+        }
+      </script>
+
+      <script>
+        /* Convierte de grados a radianes */
+        function toRadians(grados) {
+          return grados * Math.PI / 180;
+        };
+
+        /* Matriz Identidad */
+        function identidad(r) {
+            r[0] = 1; r[4] = 0; r[ 8] = 0; r[12] = 0;
+            r[1] = 0; r[5] = 1; r[ 9] = 0; r[13] = 0;
+            r[2] = 0; r[6] = 0; r[10] = 1; r[14] = 0;
+            r[3] = 0; r[7] = 0; r[11] = 0; r[15] = 1;
+        }
+
+        /* Escalación - glScalef */
+        function escalacion(matriz, sx, sy, sz) {
+          let r = new Array(16);
+          r[0] = sx; r[4] =  0; r[ 8] =  0; r[12] =  0;
+          r[1] =  0; r[5] = sy; r[ 9] =  0; r[13] =  0;
+          r[2] =  0; r[6] =  0; r[10] = sz; r[14] =  0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] =  1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Rotación sobre X - glRotatef */
+        function rotacionX(matriz, theta){
+          let r = new Array(16);
+          let c = Math.cos(toRadians(theta));
+          let s = Math.sin(toRadians(theta));
+          r[0] =  1; r[4] =  0; r[ 8] =  0; r[12] = 0;
+          r[1] =  0; r[5] =  c; r[ 9] = -s; r[13] = 0;
+          r[2] =  0; r[6] =  s; r[10] =  c; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Rotación sobre Y - glRotatef */
+        function rotacionY(matriz, theta){
+          let r = new Array(16);
+          let c = Math.cos(toRadians(theta));
+          let s = Math.sin(toRadians(theta));
+          r[0] =  c; r[4] =  0; r[ 8] =  s; r[12] = 0;
+          r[1] =  0; r[5] =  1; r[ 9] =  0; r[13] = 0;
+          r[2] = -s; r[6] =  0; r[10] =  c; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Rotación sobre Z - glRotatef */
+        function rotacionZ(matriz, theta){
+          let r = new Array(16);
+          let c = Math.cos(toRadians(theta));
+          let s = Math.sin(toRadians(theta));
+          r[0] =  c; r[4] = -s; r[ 8] =  0; r[12] = 0;
+          r[1] =  s; r[5] =  c; r[ 9] =  0; r[13] = 0;
+          r[2] =  0; r[6] =  0; r[10] =  1; r[14] = 0;
+          r[3] =  0; r[7] =  0; r[11] =  0; r[15] = 1;
+          multiplica(matriz, matriz, r);
+        }
+
+        /* Proyección Paralela - glOrtho */
+        function ortho(r, izq, der, abj, arr, cerca, lejos) {
+          r[0] = 2/(der - izq); r[4] =             0; r[ 8] =                  0; r[12] =         -(der + izq)/(der - izq);
+          r[1] =             0; r[5] = 2/(arr - abj); r[ 9] =                  0; r[13] =         -(arr + abj)/(arr - abj);
+          r[2] =             0; r[6] =             0; r[10] = -2/(lejos - cerca); r[14] = -(lejos + cerca)/(lejos - cerca);
+          r[3] =             0; r[7] =             0; r[11] =                  0; r[15] =                                1;
+        }
+
+        /* Multiplicación de matrices de 4 x 4 */
+        function multiplica(c, a, b) {
+          let r = new Array(16);
+          let i, j, k;
+          for (i = 0; i < 4; i++){
+            for (j = 0; j < 4; j++){
+              let s = 0;
+              for (k = 0; k < 4; k++)
+                s = s + a[i + k * 4] * b[k + j * 4];
+              r[i + j * 4] = s;
+            }
+          }
+          for (i = 0; i < 16; i++)
+            c[i] = r[i];
+        }
+
+        class Circulo {
+          constructor(gl, radio) {
+            let vertices = [];
+            for (let i = 0; i < 360; i++) {
+               vertices.push(radio * Math.cos(i * Math.PI / 180));
+               vertices.push(radio * Math.sin(i * Math.PI / 180));
+            }
+            this.circuloVAO = gl.createVertexArray();
+            gl.bindVertexArray(this.circuloVAO);
+
+            let codigoVertices = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoVertices);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+          }
+
+          dibuja(gl, llenado) {
+            gl.bindVertexArray(this.circuloVAO);
+            gl.drawArrays((llenado) ? gl.TRIANGLE_FAN : gl.LINE_LOOP, 0, 360);
+            gl.bindVertexArray(null);
+          }
+        }
+
+        let MatrizProyeccion = new Array(16);
+        let uMatrizProyeccion;
+        let uColor;
+        let uDesplaza;
+        let uEscala;
+        let canvas, gl;
+        let naveVao;
+        let naveEVao;
+        let laserVao;
+        let monedaVao;
+
+        //estrellas
+        let estrella;
+        let velocidadEstrellas = 0.3;
+        //posiciones de la nave principal
+        let naveX = 0;
+        let naveY = -30;
+        let velocidadNave;
+        let direccionNave = 0; // 0 = quieta, -1 = abajo, 1 = arriba
+        let escalaNave = 1.0;
+        let destinoX = naveX;
+
+        //posiciones de los lasers
+        let lasers=[];
+        let velocidadLaser;
+
+        //lo que se muestra
+        let enemigosDestruidos = 0;
+        const enemigosNecesarios = 5;
+        let gameOver = false;
+        let impactos = 0; //colisiones con naves enemigas
+
+        const sonidoDisparo = new Audio('disparo.mp3');
+        const sonidoExplosion = new Audio('explosion.mp3');
+        const sonidoColision = new Audio('colision.mp3');
+        const sonidoCrecimiento = new Audio('crecimiento.mp3');
+
+
+        const naveE = {
+            x: 0,  
+            y: 45,
+            ancho: 12,
+            alto: 12,
+            visible: true,
+            velocidad: 0.7,
+            reset: function() {
+                  this.x = Math.random() * 80 - 40; //aleatorio en x
+                  this.y = 55;     
+            }
+        };
+
+        const moneda = {
+            x: 0,  
+            y: 200,
+            ancho: 8,
+            alto: 10,
+            visible: true,
+            velocidad: 0.3, 
+            reset: function() {
+                  this.x = Math.random() * 80 - 40; // aleatorio en x
+                  this.y = 200;    
+            }
+        };
+
+        const estrellas = [
+                {x: -18, y: -18},{x: -1,  y:  2},{x: -45, y: 45},{x: -36, y: 36},{x: -22, y: -26},{x: -43, y: -23},{x: 40, y: -21},{x: 20, y: -13},
+                {x: 11, y: -15},{x: 21, y: -22},{x: -40, y: -19},{x: -47, y: -11},{x: -28, y: -2},{x: 28, y: 0},{x: 14, y: 4},{x: -40, y: 8},
+                {x: 40, y: 8},{x: -45, y: 16},{x: 46, y: -10},{x: 43, y: 20},{x: -7, y: 20},{x: 20, y: 18},{x: -22, y: 18},{x: -16, y: 43},
+                {x: 10, y: 30},{x: 30, y: 38},{x: 46, y: 46},{x: 25, y: -1},{x: -17, y: 30},{x: -27, y: 0},{x: -19, y: 2},{x: -5, y: 44},
+                {x: -32, y: 12},{x: 8, y: -34},{x: 47, y: 25},{x: -15, y: 40},{x: 0, y: -45},{x: 23, y: 11},{x: -5, y: 5},{x: 37, y: -8},
+                {x: -42, y: 30},{x: 12, y: 28},{x: -10, y: -12},{x: 29, y: 37},{x: 44, y: -20},{x: -38, y: -33},{x: 19, y: -25},{x: -6, y: 17},{x: 35, y: 43}, 
+                {x: -28, y: 7},{x: 41, y: -37},{x: -50, y: -5},{x: 16, y: 22},{x: -20, y: -42},{x: 5, y: 35},{x: -12, y: -7},{x: 24, y: 0}, 
+                {x: -31, y: 16},{x: 30, y: -14},{x: -7, y: -28},{x: 48, y: 9},{x: -45, y: -20},{x: 14, y: -35},{x: -3, y: 41},{x: 39, y: -6}, 
+                {x: -27, y: 34},{x: 2, y: 12},{x: -36, y: -12},{x: 22, y: 45},{x: -9, y: -38},{x: 46, y: 14},{x: -18, y: 29},{x: -48, y: 22}, 
+                {x: 33, y: -18},{x: 7, y: 44},{x: -26, y: -9},{x: 15, y: -40},{x: -4, y: 19},{x: 39, y: 5},{x: -21, y: 37},{x: 12, y: -22}, 
+                {x: -35, y: 3},{x: 27, y: 28},{x: -12, y: -35},{x: 44, y: 17},{x: -9, y: 45},{x: 18, y: -7},{x: -47, y: -30},{x: 5, y: 25}, 
+                {x: -31, y: 11},{x: 41, y: -14},{x: -14, y: -5},{x: 36, y: 40},{x: -23, y: 20},{x: 10, y: -33},{x: -38, y: 8},{x: 16, y: -12}, 
+                {x: 21, y: 15},{x: -7, y: -45},{x: 46, y: -2},{x: -32, y: 36},{x: 0, y: 12},{x: -19, y: -27},{x: 28, y: 6},{x: -45, y: 41},
+                {x: -6, y: 33},{x: 43, y: -22},{x: -25, y: 0},{x: 8, y: 38},{x: -41, y: -16},{x: 31, y: 20},{x: -11, y: 7},{x: -49, y: 35}, 
+                {x: 32, y: -7},{x: 6, y: 19},{x: -29, y: 44},{x: 17, y: -30},{x: -2, y: 5},{x: 38, y: 23},{x: -24, y: -16},{x: 11, y: 41}, 
+                {x: -37, y: -5},{x: 26, y: 9},{x: -13, y: -41},{x: 45, y: 12},{x: -8, y: 36},{x: 19, y: -18},{x: -46, y: 7},{x: 3, y: 27}, 
+                {x: -33, y: 14},{x: 42, y: -3},{x: -15, y: 31},{x: 34, y: 0}, {x: -20, y: -11},{x: 9, y: 21}, {x: -39, y: 2},{x: 23, y: -36}, 
+                {x: -5, y: 43},{x: 47, y: -8},{x: -30, y: 29},{x: 1, y: -19},{x: -44, y: 4},{x: 14, y: 39},{x: -10, y: -28},{x: 37, y: 16}, 
+                {x: -22, y: 6},{x: 8, y: -44},{x: -42, y: -1},{x: 29, y: 33},{x: -16, y: -6},{x: 4, y: 11},{x: -34, y: 40},{x: -48, y: -7},{x: 39, y: 31}, 
+                {x: -21, y: 11}, {x: 7, y: -41}, {x: -12, y: 28}, {x: 25, y: 3}, {x: -35, y: 18}, {x: 42, y: -12}, {x: -6, y: 45}, {x: 19, y: -5},
+                {x: -29, y: 6}, {x: 33, y: -22}, {x: -44, y: 17}, {x: 5, y: 38}, {x: -16, y: -33}, {x: 27, y: 12}, {x: -41, y: 0}, {x: 13, y: -27},
+                {x: -9, y: 36}, {x: 36, y: -8}, {x: -32, y: 24}, {x: 20, y: -39}, {x: -14, y: 8}, {x: 43, y: 5}, {x: -18, y: -21}, {x: 31, y: 14},
+                {x: -46, y: -3}, {x: 11, y: 29}, {x: -25, y: 40}, {x: 6, y: -17}, {x: -38, y: -14}, {x: 22, y: 44}, {x: -3, y: -40}, {x: 34, y: 1},
+                {x: -20, y: 19}, {x: 9, y: 33}, {x: -43, y: -9}, {x: 30, y: -2}, {x: -7, y: 26}, {x: 15, y: -45}, {x: -31, y: 37}, {x: 24, y: 7},
+                {x: -10, y: -31}, {x: 38, y: 16}, {x: -5, y: -12}, {x: 41, y: -25}, {x: -26, y: 15}, {x: 18, y: 40}, {x: -13, y: -37}, {x: 32, y: 10},
+                {x: -40, y: 20}, {x: 14, y: -2}, {x: -17, y: 27}, {x: 37, y: -19}, {x: -4, y: 9}, {x: 28, y: 22}, {x: -33, y: -6}, {x: 12, y: 44},
+                {x: -8, y: -20}, {x: 35, y: 4}, {x: -36, y: 11}, {x: 21, y: -30}, {x: -1, y: 18}, {x: 29, y: -10}, {x: -23, y: 2}, {x: 16, y: 39},
+                {x: -37, y: -1}, {x: 26, y: -36}, {x: -11, y: 32}, {x: 40, y: -15}, {x: -28, y: 23}, {x: 10, y: -7}, {x: -2, y: 5}, {x: 44, y: 8},
+                {x: -19, y: -29}, {x: 23, y: 13}, {x: -45, y: 30}, {x: 17, y: -11}, {x: -6, y: 42}, {x: 33, y: -4}, {x: -34, y: 35}, {x: 8, y: 25},
+                {x: -15, y: -18}, {x: 36, y: 2}, {x: -27, y: 16}, {x: 5, y: -39}, {x: -42, y: -8}, {x: 31, y: 21}, {x: -24, y: -13}, {x: 19, y: 37},
+                {x: -30, y: 1}, {x: 12, y: -23}, {x: -39, y: 14}, {x: 34, y: -5}, {x: -22, y: 41}, {x: 7, y: -16}, {x: -47, y: 6}, {x: 20, y: -35},
+                {x: -9, y: 24}, {x: 43, y: -9}, {x: -12, y: 38}, {x: 25, y: -1}, {x: -35, y: 33}, {x: 14, y: -27}, {x: -16, y: 3}, {x: 37, y: 7},
+                {x: -5, y: -34}, {x: 28, y: 19}, {x: -41, y: -2}, {x: 11, y: 42}, {x: -31, y: -10}, {x: 22, y: -28}, {x: -8, y: 15}, {x: 38, y: -1},
+                {x: -18, y: 36}
+        ];
+
+        function colisionRR(a, b) {
+          return a.x < b.x + b.ancho && a.x + a.ancho > b.x &&
+                 a.y < b.y + b.alto && a.y + a.alto > b.y;
+        };
+
+        function colisionCC(a, b) {
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let distancia = Math.sqrt(dx*dx + dy*dy);
+            return distancia <= (a.radio + b.radio);
+        }
+        //mover nave horizontal
+        function mouseDown(e){
+            var posx = e.x;
+            var posy = e.y;
+
+            posx = posx - canvas.offsetLeft;
+            posy = posy - canvas.offsetTop;
+
+            var x = (posx * 100)/500 - 50;
+            var y = (100 - (posy * 100)/500) - 50;
+
+            console.log('Click en x = ', x, ' y = ', y);
+
+            destinoX = x; 
+        }
+        //disparar lasers
+        function dispararLaser() {
+            const laser = {
+                x: naveX,
+                y: naveY + 5,
+                ancho: 1,
+                alto: 2
+            };
+            lasers.push(laser);
+            sonidoDisparo.currentTime = 0;
+            sonidoDisparo.play();
+        }
+        //movimiento de estrellas
+        function actualizarEstrellas() {
+          for (let i = 0; i < estrellas.length; i++) {
+            let e = estrellas[i];
+            e.y -= velocidadEstrellas; //baja en Y
+
+            //si sale de pantalla reaparece arriba en x aleatorio
+            if (e.y < -50) {
+              e.y = 50; // reaparece arriba
+              e.x = Math.random() * 100 - 50;
+            }
+          }
+        }
+
+        function dibuja(){
+          gl.clear(gl.COLOR_BUFFER_BIT);
+
+          //movimiento de estrellas
+          actualizarEstrellas();
+
+          //dibuja las estrellas
+          gl.uniform4f(uColor, 1, 1, 1, 1);
+            for (let i = 0; i < estrellas.length; i++) {
+                let e = estrellas[i];
+                gl.uniform2f(uEscala, 1.0, 1.0);
+                gl.uniform2f(uDesplaza, e.x, e.y);
+                estrella.dibuja(gl, true);
+          }
+          
+          //lo que muestra en alert
+          if (enemigosDestruidos >= enemigosNecesarios) {
+                alert("¡Misión cumplida!");
+                return; 
+          }
+          if (impactos >= 3) {
+                gameOver = true;
+                alert("GAME OVER");
+                return; 
+          }
+
+          //Colision nave con nave enemiga
+          const naveRect = { x: naveX - 15, y: naveY - 20, ancho: 29, alto: 22 };
+          const naveERect = { x: naveE.x - 6, y: naveE.y - 6, ancho: 12, alto: 12 };
+          if (naveE.visible && colisionRR(naveRect, naveERect)) {
+              impactos++;
+              sonidoColision.currentTime = 0;
+              sonidoColision.play();
+              document.getElementById("contadorImpactos").textContent = impactos; 
+              escalaNave *= 0.8; //escala la nave
+              naveE.visible = false;
+              setTimeout(() => {
+                  naveE.reset();
+                  naveE.visible = true;
+              }, 2000);
+          }
+
+            //dibuja la nave
+            gl.uniform2f(uEscala, escalaNave, escalaNave);
+            gl.bindVertexArray(naveVao);
+            gl.uniform2f(uDesplaza, naveX, naveY);
+
+            gl.uniform4f(uColor,0,0,0, 1);
+            gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+
+            //pieza 1
+            gl.uniform4f(uColor,148/255, 164/255, 179/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 4, 6);
+            //pieza 2
+            gl.uniform4f(uColor,55/255, 74/255, 91/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 10, 6);
+            //pieza 2.1
+            gl.uniform4f(uColor,103/255, 119/255, 141/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 16, 6);
+            //pieza 3
+            gl.uniform4f(uColor, 1, 0, 0, 1);
+            gl.drawArrays(gl.TRIANGLES, 22, 6);
+            //pieza 4
+            gl.uniform4f(uColor,124/255, 142/255, 162/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 28, 6);
+            //pieza 5
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 34, 6);
+            //pieza 6
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 40, 6);
+            //pieza 6.1
+            gl.uniform4f(uColor,55/255, 76/255, 93/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 46, 6);
+            //pieza 7
+            gl.uniform4f(uColor,1,0,0, 1);
+            gl.drawArrays(gl.TRIANGLES, 52, 6);
+            //pieza 7.1
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 58, 6);
+            //pieza 8
+            gl.uniform4f(uColor,55/255, 74/255, 91/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 64, 6);
+            //pieza 8.1
+            gl.uniform4f(uColor,169/255, 187/255, 201/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 70, 6);
+            //pieza 9
+            gl.uniform4f(uColor,1, 1, 1, 1);
+            gl.drawArrays(gl.TRIANGLES, 76, 6);
+            //pieza 9.1
+            gl.uniform4f(uColor,1, 1, 1, 1);
+            gl.drawArrays(gl.TRIANGLES, 82, 6);
+            //pieza 10
+            gl.uniform4f(uColor,148/255, 164/255, 179/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 88, 6);
+            //pieza 11
+            gl.uniform4f(uColor,1,0,0, 1);
+            gl.drawArrays(gl.TRIANGLES, 94, 6);
+            //pieza 12
+            gl.uniform4f(uColor,55/255, 74/255, 91/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 100, 6);
+            //pieza 13
+            gl.uniform4f(uColor,51/255, 71/255, 83/255, 1);
+            gl.drawArrays(gl.TRIANGLES, 106, 12);
+
+            //movimiento de la nave con el mouse
+            if (Math.abs(destinoX - naveX) > velocidadNave) {
+                if (naveX < destinoX) {
+                    naveX += velocidadNave;  //mover a la derecha
+                } else if (naveX > destinoX) {
+                    naveX -= velocidadNave;  //mover a la izquierda
+                }
+            } else {
+                naveX = destinoX; 
+            }
+
+            //dibujar lasers de la nave
+            gl.uniform2f(uEscala, 1.0, 1.0);
+            gl.bindVertexArray(laserVao);
+            gl.uniform4f(uColor, 0, 0, 1, 1); //laser azul
+
+            for (let i = 0; i < lasers.length; i++) {
+                let l = lasers[i];
+                // Verifica colision con la nave enemiga
+                const naveERectangulo = { x: naveE.x - 6, y: naveE.y - 6, ancho: 12, alto: 12 };
+                if (naveE.visible){
+                    if (colisionRR(l, naveERectangulo)) {
+                      enemigosDestruidos++;
+                      sonidoExplosion.currentTime = 0;
+                      sonidoExplosion.play();
+                      document.getElementById("contadorEnemigos").textContent = enemigosDestruidos; 
+                      naveE.visible = false;
+                      lasers.splice(i, 1);
+                      i--;
+                      // Reaparece despues de segundos
+                      setTimeout(() => {
+                          naveE.reset();
+                          naveE.visible = true; //visible al reaparecer
+                      }, 1000);
+                    continue;
+                }
+
+                }
+                // movimiento del laser
+                l.y += velocidadLaser;
+                // dibujo del laser
+                gl.uniform2f(uDesplaza, l.x, l.y);
+                gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+            }
+
+            //dibujar nave enemiga
+            if (naveE.visible){
+                gl.uniform2f(uEscala, 0.8, 0.8);
+                gl.bindVertexArray(naveEVao);
+
+                //movimiento de la nave enemiga
+                naveE.y -= naveE.velocidad;
+
+                if (naveE.y < -50) { //si sale del limite
+                    naveE.reset();   //reaparece
+                }
+
+                gl.uniform4f(uColor, 0, 0, 0, 1); //fondo
+                gl.uniform2f(uDesplaza, naveE.x, naveE.y);
+                gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+
+                gl.uniform4f(uColor, 169/255, 187/255, 201/255, 1); // primer color
+                gl.uniform2f(uDesplaza, naveE.x, naveE.y);
+                gl.drawArrays(gl.TRIANGLES, 4, 9);
+
+                gl.uniform4f(uColor, 55/255, 74/255, 91/255, 1); // segundo color
+                gl.uniform2f(uDesplaza, naveE.x, naveE.y);
+                gl.drawArrays(gl.TRIANGLES, 13, 9);
+
+                gl.uniform4f(uColor, 1, 0, 0, 1); // centro
+                gl.uniform2f(uDesplaza, naveE.x, naveE.y);
+                gl.drawArrays(gl.TRIANGLE_FAN, 22, 4);
+
+            }
+
+            //dibuja la moneda
+            if (moneda.visible) {
+                  moneda.y -= moneda.velocidad; //movimiento baja
+
+                  gl.uniform2f(uEscala, 8.0, 8.0);
+                  gl.uniform2f(uDesplaza, moneda.x, moneda.y);
+                  gl.bindVertexArray(monedaVao);
+                  // Rectangulos de colision
+                  const naveRect = { x: naveX - 15, y: naveY - 20, ancho: 29, alto: 22 };
+                  const monedaRect = { x: moneda.x - 4, y: moneda.y - 5, ancho: 8, alto: 10 };
+
+                  // Verificar colision 
+                  if (colisionRR(naveRect, monedaRect)) {
+                      if (escalaNave < 1.0) {
+                          escalaNave += 0.1;
+                          sonidoCrecimiento.currentTime = 0;
+                          sonidoCrecimiento.play();
+                          impactos--;
+                          document.getElementById("contadorImpactos").textContent = impactos;
+                          moneda.reset(); 
+                          
+                      }
+                  }
+                  // Dibujar la moneda
+                  gl.uniform4f(uColor, 0,0,0,1); //fondo
+                  gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
+
+                  gl.uniform4f(uColor, 0, 0, 1, 1);
+                  gl.drawArrays(gl.TRIANGLES, 4, 15);
+
+                  gl.uniform4f(uColor, 0, 1, 0, 1);
+                  gl.drawArrays(gl.TRIANGLES, 19, 15);
+
+                  // Reiniciar solo si sale de pantalla
+                  if (moneda.y < -50){
+                    moneda.reset();
+                  }
+            }
+          requestAnimationFrame(dibuja);
+        }
+
+        function main(){
+          canvas = document.getElementById("webglcanvas");
+          gl = canvas.getContext("webgl2");
+
+          gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+            canvas.addEventListener("mousedown", mouseDown, false);
+
+            document.getElementById("arriba").addEventListener("click", () => {
+              if (naveY < 45) naveY += 3;
+
+            });
+
+            document.getElementById("abajo").addEventListener("click", () => {
+              if (naveY > -45) naveY -= 3;
+            });
+
+          document.getElementById("disparar").addEventListener("click", () => {
+                dispararLaser();
+            });
+            
+
+          // Se compilan y enlazan los shaders
+          let shaderDeVertice = gl.createShader(gl.VERTEX_SHADER);
+          gl.shaderSource(shaderDeVertice, document.getElementById("vs").text.trim());
+          gl.compileShader(shaderDeVertice);
+
+          let shaderDeFragmento = gl.createShader(gl.FRAGMENT_SHADER);
+          gl.shaderSource(shaderDeFragmento, document.getElementById("fs").text.trim());
+          gl.compileShader(shaderDeFragmento);
+
+          let programaID = gl.createProgram();
+          gl.attachShader(programaID, shaderDeVertice);
+          gl.attachShader(programaID, shaderDeFragmento);
+          gl.linkProgram(programaID);
+
+          gl.useProgram(programaID);
+
+          // estrellas
+          estrella = new Circulo(gl, 0.3);
+
+            // nave
+            let nave = [
+
+              //cuadro de la nave
+              -15,-20,
+              14,-20,
+              14,2,
+              -15,2,
+
+              /*pieza 1*/
+              -2,-17, //A
+              2,-17, //B
+              2,-10, //C
+
+              -2,-17, //A
+              2,-10, //C
+              -2,-10, //D
+
+              /*pieza 2*/
+              //izquierda
+              -2,-17, //A
+              -2,-10, //D
+              -3,-16, //E
+              //derecha
+              2,-17, //B
+              2,-10, //C
+              3,-16, //F
+
+              /*pieza 2.1*/
+              //izquierda
+              -2,-10, //D
+              -3,-16, //E
+              -3,-10, //G
+              //derecha
+              2,-10, //C
+              3,-16, //F
+              3,-10, //H
+
+
+              /*pieza 3*/
+              //izquierda
+              -3,-16, //E
+              -3,-10, //G
+              -4,-16, //I
+              //derecha
+              3,-16, //F
+              3,-10, //H
+              4,-16, //J
+
+              /*pieza 4*/
+              //izquierda
+              -3,-10, //G
+              -4,-16, //I
+              -5,-16, //L
+              //derecha
+              3,-10, //H
+              4,-16, //J
+              5,-16, //K
+
+              /*pieza 5*/
+              //izquierda
+              -3,-10, //G
+              -5,-16, //L
+              -6,-10, //M
+              //derecha
+              3,-10, //H
+              5,-16, //K
+              6,-10, //N
+
+              /*pieza 6*/
+              //izquierda
+              -5,-16, //L
+              -6,-10, //M
+              -7,-15, //O
+              //derecha
+              5,-16, //K
+              6,-10, //N
+              7,-15, //P
+
+              /*pieza 6.1*/
+              //izquierda
+              -6,-10, //M
+              -7,-15, //O
+              -7,-11, //Q
+              //derecha
+              6,-10, //N
+              7,-15, //P
+              7,-11, //R
+
+              /*pieza 7*/
+              //izquierda
+              -7,-11, //Q
+              -7,-13, //S
+              -11,-13, //T
+              //derecha
+              7,-11, //R
+              7,-13, //U
+              11,-13, //V
+
+              /*pieza 7.1*/
+              //izquierda
+              -7,-11, //Q
+              -11,-13, //T
+              -11,-11, //W
+              //derecha
+              7,-11, //R
+              11,-13, //V
+              11,-11, //Z
+
+              /*pieza 8*/
+              //izquierda
+              -7,-15, //O
+              -7,-13, //S
+              -14,-15, //A1
+              //derecha
+              7,-13, //U
+              7,-15, //P
+              13,-15, //C1
+
+              /*pieza 8.1*/
+              //izquierda
+              -7,-13, //S
+              -14,-15, //A1
+              -14,-13, //B1
+              //derecha
+              7,-13, //U
+              13,-15, //C1
+              13,-13, //D1
+
+              /*pieza 9*/
+              //izquierda
+              -11,-11, //W
+              -10,-11, //E1
+              -11,-5, //F1              
+              //derecha
+              11,-11, //Z
+              10,-11, //I1
+              11,-5, //J1
+
+              /*pieza 9.1*/
+              //izquierda
+              -13,-13, //G1
+              -14,-13, //B1
+              -14,-7,
+              //derecha
+              13,-13, //D1 
+              12,-13, //K1
+              13,-7, //L1
+              
+              /*pieza 10*/
+              -1,2, //M1
+              -1,-10, //N1
+              1,-10, //O1
+              -1,2, //M1
+              1,-10, //O1
+              1,2, //P1
+
+              /*pieza 11*/
+              //izquierda
+              -1,2, //M1              
+              -1,-10, //N1
+              -2,-10, //D
+              //derecha
+              1,-10, //O1
+              1,2, //P1
+              2,-10, //C
+
+              /*pieza 12*/
+              //izquierda
+              -1,2, //M1              
+              -2,-10, //D
+              -3,-10, //G
+              //derecha
+              1,2, //P1
+              2,-10, //C
+              3,-10, //H
+
+              /*pieza 13*/
+              //izquierda
+              -4,-16, //I
+              -5,-16, //L
+              -5,-19, //Q1
+              
+              -4,-16, //I
+              -5,-19, //Q1
+              -4,-19, //R1
+              //derecha
+              4,-16, //J
+              5,-16, //K
+              4,-19, //S1
+
+              5,-16, //K
+              4,-19, //S1
+              5,-19 //T1
+            ];
+
+            //Nave
+            naveVao= gl.createVertexArray();
+            gl.bindVertexArray(naveVao);
+
+            let codigoNave = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoNave);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(nave), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+            let verticesLaser = [
+              -0.5, -1, //V1
+               0.5, -1, //U1
+               0.5, 1, //Z1
+              -0.5, 1, //W1
+            ];
+
+            //Laser
+            laserVao= gl.createVertexArray();
+            gl.bindVertexArray(laserVao);
+
+            let codigoLaser = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoLaser);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verticesLaser), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+            //Nave enemiga
+            let verticesNaveE = [
+                -6,-6, //S2
+                6,-6, //T2
+                6,6, //Q2
+                -6,6, //R2
+                //parte 1
+                -4,6, //U2
+                0,0, //V2
+                4,6, //W2
+                //parte 3
+                0,0, //V2
+                6,0, //Z2
+                4,-6, //A3
+                //parte 5
+                0,0, //V2
+                -4,-6, //B3
+                -6, 0, //C3
+
+                //parte 2
+                0,0, //V2
+                4,6, //W2
+                6,0, //Z2
+                //parte 4
+                0,0, //V2
+                -4,-6, //B3
+                4,-6, //A3
+                //parte 6
+                0,0, //V2
+                -4,6, //U2
+                -6, 0, //C3
+
+                //centro
+                -0.5,-0.5,
+                0.5,-0.5,
+                0.5,0.5,
+                -0.5,0.5
+            ];
+
+            naveEVao= gl.createVertexArray();
+            gl.bindVertexArray(naveEVao);
+
+            let codigoNaveE = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoNaveE);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verticesNaveE), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+            
+            let verticesMoneda =[
+                -0.5, -1,
+                0.5, -1,
+                0.5,  0.2,
+                -0.5,  0.2,
+
+                //azul
+                0,0.45-0.9,//punto 0
+                0+0.01,0.9+0.05-0.9, //A
+                0.1,0.58-0.9, //B
+
+                0,0.45-0.9,//punto 0
+                0.46+0.02,0.54+0.08-0.9, //C
+                0.16,0.38+0.02-0.9+0.01, //D
+
+                0,0.45-0.9,//punto 0
+                0.26+0.04,0.06-0.02-0.9+0.01, //E
+                0+0.01,0.28-0.9, //F
+
+                0,0.45-0.9,//punto 0
+                -0.26-0.04,0.06-0.02-0.9, //G
+                -0.16,0.38+0.02-0.9, //H
+
+                0,0.45-0.9,//punto 0
+                -0.46-0.02,0.54+0.08-0.9, //I
+                -0.08,0.58-0.9+0.01,//J
+
+                //rojo
+                0,0.45-0.9,//punto 0
+                0.1,0.58-0.9, //B
+                0.46+0.02,0.54+0.08-0.9, //C
+
+                0,0.45-0.9,//punto 0
+                0.16,0.38+0.02-0.9+0.01, //D
+                0.26+0.04,0.06-0.02-0.9+0.01, //E
+
+                0,0.45-0.9,//punto 0
+                0+0.01,0.28-0.9, //F
+                -0.26-0.04,0.06-0.02-0.9, //G
+
+                0,0.45-0.9,//punto 0
+                -0.16,0.38+0.02-0.9, //H
+                -0.46-0.02,0.54+0.08-0.9, //I
+
+                0,0.45-0.9,//punto 0
+                0+0.01,0.9+0.05-0.9, //A
+                -0.08,0.58-0.9+0.01//J
+            ];
+
+            monedaVao= gl.createVertexArray();
+            gl.bindVertexArray(monedaVao);
+
+            let codigoMoneda = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, codigoMoneda);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verticesMoneda), gl.STATIC_DRAW);
+            gl.enableVertexAttribArray(0);
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+            gl.bindVertexArray(null);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+
+          uColor = gl.getUniformLocation(programaID, "uColor");
+          uDesplaza = gl.getUniformLocation(programaID, "uDesplaza");
+          uMatrizProyeccion = gl.getUniformLocation(programaID, "uMatrizProyeccion");
+          uEscala = gl.getUniformLocation(programaID, "uEscala");
+
+          ortho(MatrizProyeccion, -50, 50, -50, 50, -1, 1);
+          gl.uniformMatrix4fv(uMatrizProyeccion, false, MatrizProyeccion);
+
+          gl.uniform2f(uEscala, 1.0, 1.0);
+          gl.clearColor(0.0, 0.0, 0.0, 1.0);
+
+          velocidadLaser = 0.8; //laser de la nave
+          velocidadNave = 0.5; // nave
+          sonidoDisparo.volume = 0.5;
+          sonidoExplosion.volume = 0.5;
+          sonidoColision.volume = 0.5;
+          sonidoCrecimiento.volume = 0.5;
+          dibuja();
+        }
+        window.onload = main;
+      </script>
+</body>
+</html>
